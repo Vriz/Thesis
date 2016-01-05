@@ -1,0 +1,95 @@
+__author__ = 'vriz'
+# !/usr/bin/env python
+# -*-coding: utf-8-*-
+import arcpy
+import csv
+import os
+from prettytable import PrettyTable
+"""This module takes a polyline shapefile, calculates the geometry of each polyline, stores it in a list
+for further use, prints it and finally saves it in a scv file"""
+
+
+class InsertCursor:
+
+    def __init__(self, shapefile):
+        # Inserts a cursor in the desired fields of our polyline.
+        self.shapefile = shapefile
+        # The path to our shape file
+        self.path = r"C:\Users\vriz\Documents\ArcGIS\AddIns\Desktop10.1"
+        self.fc = os.path.join(self.path, self.shapefile)
+        # The desired fields
+        self.fields = ["FID", "Shape@"]
+        # The cursor
+        self.cursor = arcpy.da.SearchCursor(self.fc, self.fields )
+
+
+class FindGeometry:
+    """ Finds the geometry of each polyline in a shape file, stores it to a list, saves it to a csv file
+     and prints it in a pretty way """
+
+    def __init__(self, cursor):
+        self.cursor = cursor
+        # Creates the list with the geometry of each polyline
+        self.final_list = self.geometry(self.cursor)
+        # Saves it to csv file
+        self.save_to_csv(self.final_list, raw_input("Name of file:"))
+        # Print it in a pretty way
+        self.print_dictionary(self.final_list)
+
+    def geometry(self, cur):
+        """ Extracts the geometry of each polyline and stores it to a list
+        @Param cur is the cursor we insert to the desired fields of the shape file
+        @Return is a list with the geometries """
+        # Create an empty list (this is the one that will be returned)
+        listfinal = []
+        # For each row in our cursor
+        for row in cur:
+            # Create a temporary list that is going to be emptied every time we change row
+            lst = []
+            # Every time we change row we append the final list with the temporary list
+            listfinal.append(lst)
+            # For each part in the row[1]='shape' (It could be a multi part polyline)
+            for part in row[1]:
+                # For each vertex of the feature
+                for pnt in part:
+                    # reate list with X,Y coordinates of the vertex
+                    lstpnts = [pnt.X, pnt.Y]
+                    # Append the temporary list which at the end contains every X,Y of the polyline
+                    lst.append(lstpnts)
+        return listfinal
+
+    def print_dictionary(self, lst):
+        """ This method takes a list and prints it in a pretty way
+        @Param list is the list with the geometry of each polyline """
+        count = 0
+        for part in lst:
+            k = PrettyTable(["FID "+str(count)])
+            k.add_row(["----->"])
+            print k
+            t = PrettyTable(["Geometry"])
+            for n in part:
+                t.add_row([n])
+            print t
+            print ""
+            count += 1
+
+    def save_to_csv(self, lst, name_of_file):
+        """ This method takes a list and saves it to a csv file
+        @Param list is the list with the geometry of each polyline
+        @Param Name_of_file is the name of the file in which the dictionary will be saved """
+        w = csv.writer(open(name_of_file, "w"))
+        count = 0
+        for part in lst:
+            w.writerow(["FID "+str(count)+"--->", part])
+            count += 1
+
+
+def main():
+    """ main class here """
+    # Create an instance of the insert_cursor class for the desired polyline
+    cur = InsertCursor(raw_input("Enter the name of the shapefile followed by .shp:"))
+    # Use the cursor of the instance to calculate the geometry
+    FindGeometry(cur.cursor)
+
+if __name__ == '__main__':
+    main()
