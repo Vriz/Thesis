@@ -1,0 +1,65 @@
+__author__ = 'vriz'
+# !/usr/bin/env python
+# -*-coding: utf-8-*-
+"""This module inserts a new row in the node-SQL table"""
+
+import pyodbc
+
+
+class Connect:
+    """ Connects us to the database """
+    def __init__(self, nodes):
+        """ Connects us to the database and and assigns the node table to the appropriate variable """
+        self.cnxn = pyodbc.connect('Trusted_Connection=yes', driver = '{SQL Server}', server = 'localhost', database = 'PracticeCopy')
+        self.nodes = nodes
+
+
+class InsertNode:
+
+    def __init__(self, nodes, cnxn, id, visibility, cls, junction):
+        self.nodes = nodes
+        self.cnxn = cnxn
+        self.cursor = self.cnxn.cursor()
+        # The id of the node
+        self.id = id
+        # Tge visibility of the node
+        self.visibility = visibility
+        # The class of the node
+        self.cls = cls
+        # The junction variable of the node
+        self.junction = junction
+        # Get the correct FID number for the row that is about to be inserted
+        self.fid = self.get_fid()
+        # Insert the row
+        self.insert()
+
+    def get_fid(self):
+        """ This method finds the correct FID number for our row
+        @ Return is the FID number"""
+
+        # Select everything from our table
+        self.cursor.execute("SELECT * FROM dbo."+self.nodes+" ORDER BY FID ASC")
+        # Assign the rows
+        rows = self.cursor.fetchall()
+        # Set a counter to zero
+        counter = 0
+        # For every row of the table
+        for row in rows:
+            # Add one to our counter
+            counter += 1
+        return counter+1
+
+    def insert(self):
+        """This method inserts the row to our table"""
+
+        self.cursor.execute("INSERT INTO dbo."+self.nodes+" VALUES("+str(self.fid) + ', '+str(self.id) + ', '+str(self.visibility) + ', '+str(self.cls) + ', '+str(self.junction) +")")
+        self.cnxn.commit()
+
+
+def main():
+    connection = Connect("NODES")
+    InsertNode(connection.nodes, connection.cnxn, 9999, 1, 10, 1)
+
+
+if __name__ == '__main__':
+    main()
