@@ -1,7 +1,7 @@
 __author__ = 'vriz'
 # !/usr/bin/env python
 #  -*-coding: utf-8-*-
-""" Takes an SQL table and creates a copy of it and removes the non desired links based on the users preferences """
+""" Takes an SQL table, creates a copy of it and removes the non desired links based on the users preferences """
 
 import pyodbc
 
