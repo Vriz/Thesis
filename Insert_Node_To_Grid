@@ -2,7 +2,7 @@ __author__ = 'vriz'
 # !/usr/bin/env python
 # -*-coding: utf-8-*-
 """This module takes data for a new node that is about to be inserted to our grid. Creates a copy of our database and
-inserts the new node in the appropriate nodes-table. After that, it splits the link in which we want the new node
+inserts the new node in the appropriate nodes-table. After that, it splits the link, in which we want the new node
 to be inserted, in two parts"""
 
 import pyodbc
