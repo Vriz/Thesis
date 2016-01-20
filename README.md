@@ -1,1 +1,1 @@
-# Thesis. Here are located all the scripts that i am currently developing for my thesis at NTUA
+#Here are located all the scripts that i will be developing for my thesis at NTUA
