@@ -5,7 +5,7 @@ __author__ = 'vriz'
  an adjacency dictionary"""
 
 # dbo.NODES ---> Columns ( FID ID VISIBILITY CLASS JUNCTION)
-# dbo.LINKS ---> Columns ( FID LinkID FromNodeID ToNodeID StartCost TravCost )
+# dbo.LINKS ---> Columns ( FID LinkID FromNodeID ToNodeID StartCost TravCost TWOWAY StartCost2 )
 
 import pyodbc
 import csv
@@ -23,39 +23,38 @@ class Connect:
 
 
 class Conversion:
-    """ Takes the information from 2 tables (nodes and links) and creates the adjacency dictionary """
 
     def __init__(self, nodes, links, cnxn):
         self.nodes = nodes
         self.links = links
         self.cnxn = cnxn
 
-        # Create the list with the 2 dictionaries that hold the connections of the nodes and assign it to the list variable
-        self.list = self.create_dicts_of_connections(self.get_rows_of_table("SELECT * FROM dbo."+self.links))
+        # Create a list with the 2 dictionaries that hold the connections of the nodes
+        self.list_of_dictionaries = self.create_list_of_dictionaries(self.get_rows_of_table("SELECT * FROM dbo."+self.links))
 
-        # Create the dictionary with the personal information of each node and assign it to the dict variable
-        self.dict = self.create_list(self.get_rows_of_table("SELECT * FROM dbo."+self.nodes), self.list)
+        # Create the dictionary with the personal information of each node
+        self.dictionary_of_personal_data = self.create_dictionary_of_personal_data(self.get_rows_of_table("SELECT * FROM dbo."+self.nodes), self.list_of_dictionaries)
 
         # The nodes we need to remove
-        self.NodesToRemove = self.list_of_nodes_to_remove(self.get_rows_of_table("SELECT * FROM dbo."+self.nodes))
-
-        # Adjust the dictionaries that hold the connections of the nodes and assign the new list of dictionaries to the fixed list variable
-        self.fixed_list = self.adjust_connections(self.NodesToRemove, self.list)
+        self.list_of_nodes_to_remove = self.nodes_to_remove(self.dictionary_of_personal_data)
 
         # Adjust the personal information for the nodes we want to delete
-        self.fixed_dict = self.adjust_information(self.NodesToRemove, self.dict)
+        self.adjust_connections(self.list_of_nodes_to_remove)
 
-        # Build the Adjacency Dictionary
-        self.Adjacency_Dictionary = self.build_dictionary(self.fixed_dict, self.fixed_list)
+        # Reset the FID column
+        self.update_database(self.get_rows_of_table("SELECT * FROM dbo."+self.links))
+        
+        self.adjust_information(self.list_of_nodes_to_remove)
+        
+        # Create a list with the 2 dictionaries that hold the connections of the nodes taking into consideration the
+        # two-way links
+        self.fixed_list_of_dictionaries = self.create_fixed_list_of_dictionaries(self.get_rows_of_table("SELECT * FROM dbo."+self.links))
 
-        # Print the Adjacency_Dictionary in a pretty way
+        # Built the adjacency dictionary
+        self.Adjacency_Dictionary = self.build_dictionary(self.dictionary_of_personal_data, self.fixed_list_of_dictionaries)
+
+        # Print it in a pretty way
         self.print_dictionary(self.Adjacency_Dictionary)
-
-        # Update the information in our database
-        self.update_database(self.NodesToRemove)
-
-        # Save it to a csv file
-        #self.save_to_csv(self.Adjacency_Dictionary, self.ask_name_of_file())
 
     def get_rows_of_table(self, sql_string):
         """ This method gives us the desired rows of an Sql table
@@ -65,8 +64,8 @@ class Conversion:
         cursor.execute(sql_string)
         rows = cursor.fetchall()
         return rows
-    
-    def create_dicts_of_connections(self, rows):
+
+    def create_list_of_dictionaries(self, rows):
         """ This method creates 2 dictionaries
         The first dictionary contains the ID of the nodes where we can move to (from the Key node) and the required
         costs to do that.
@@ -101,10 +100,10 @@ class Conversion:
                 temp_dict_1[row[3]] = [row[2]]
         return [temp_dict_0, temp_dict_1]
 
-    def create_list(self, rows, lst):
+    def create_dictionary_of_personal_data(self, rows, lst):
         """ This method creates a dictionary for the Nodes of the dbo.NODES table.
         The keys will be the ID of each node and the value will be a 3 element list
-        ID--->[CLASS,VISIBILITY,JUNCTION]
+        ID--->[VISIBILITY, CLASS, JUNCTION]
         For the JUNCTION checks if each node connects to more than 2 other nodes
         It also updates the database
         @Param rows is the rows of the NODES table
@@ -113,116 +112,343 @@ class Conversion:
 
         # Create an empty Dictionary
         temp_dict = {}
-        # For each row of the table
+        # For each row of the nodes table
         for row in rows:
             node = row[1]
             to_dict = lst[0]
             from_dict = lst[1]
-            # If the node is a key in any of the 2 dictionaries
+            # If the node is a key in both of the 2 dictionaries
             if node in from_dict and node in to_dict:
                     # If the FromNodeID nodes = 1 and the ToNodeID nodes = 1
                     if len(from_dict[node]) == 1 and len(to_dict[node]) == 1:
                         # Assign the values to each Key and set Junction = 0
+                        # Junction = 0 means that the node connects two links that both have the same direction
                         temp_dict[node] = [row[2], row[3], 0]
-                        self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=0 WHERE ID=?", (node,))
+                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=0 WHERE ID=?", (node,))
                         self.cnxn.commit()
                     else:
                         # Assign the values to each Key and set Junction = 1
+                        # Junction = 1 means that there more than 2 links coming to and leaving from our node
                         temp_dict[node] = [row[2], row[3], 1]
-                        self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=1 WHERE ID=?", (node,))
+                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=1 WHERE ID=?", (node,))
                         self.cnxn.commit()
-            # If the node is a key only in the from_dict which means that you can only travel from the key node towards other nodes
+            # If the node is a key only in the to_dict which means that you can only travel from the key node towards
+            # other nodes
             elif node in to_dict:
-                    # Assign the values to each Key and set Junction = 1
-                    temp_dict[node] = [row[2], row[3], 1]
-                    self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=1 WHERE ID=?", (node,))
-                    self.cnxn.commit()
-            # If the node is a key only in the to_dict which means that you can only travel towartds the key node from other nodes
+                    if len(to_dict[node]) == 2:
+                        # Assign the values to each Key and set Junction = 20
+                        # Junction = 20 means that the node connects two link that both have our node as starting point
+                        temp_dict[node] = [row[2], row[3], 20]
+                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=20 WHERE ID=?", (node,))
+                        self.cnxn.commit()
+                    else:
+                        # Assign the values to each Key and set Junction = 2
+                        # Junction = 2 means that there are more than 2 links that both have our node as staring point
+                        temp_dict[node] = [row[2], row[3], 2]
+                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=2 WHERE ID=?", (node,))
+                        self.cnxn.commit()
+            # If the node is a key only in the from_dict which means that you can only travel towards the key node from
+            #  other nodes
             elif node in from_dict:
-                    # Assign the values to each Key and set Junction = 1
-                    temp_dict[node] = [row[2], row[3], 1]
-                    self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=1 WHERE ID=?", (node,))
-                    self.cnxn.commit()
+                    if len(from_dict[node]) == 2:
+                        # Assign the values to each Key and set Junction = 30
+                        # Junction = 30 means that the node connects two links that both have our node as ending point
+                        temp_dict[node] = [row[2], row[3], 30]
+                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=30 WHERE ID=?", (node,))
+                        self.cnxn.commit()
+                    else:
+                        # Assign the values to each Key and set Junction = 3
+                        # Junction = 3 means that there are more than 2 links that both have our node as ending point
+                        temp_dict[node] = [row[2], row[3], 3]
+                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=3 WHERE ID=?", (node,))
+                        self.cnxn.commit()
             # If the node in not a key in any dictionary which means it has no connections
             else:
                     # Assign the values to each Key and set Junction = 5
                     temp_dict[node] = [row[2], row[3], 5]
-                    self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=5 WHERE ID=?", (node,))
+                    self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=5 WHERE ID=?", (node,))
                     self.cnxn.commit()
         return temp_dict
 
-    def list_of_nodes_to_remove(self, rows):
+    def nodes_to_remove(self, dictionary):
         """ This method creates a list with the nodes we want to remove
-        @Param dict is a dictionary tha holds all the personal information of each node
+        @Param dictionary is a dictionary tha holds all the personal information of each node
         @Return is the list with the nodes we want to remove """
 
         # Create an empty list
-        nds = []
-        # For each node of the table
-        for row in rows:
-            # if visibility = 0 and junction = 0
-            if row[2] == 1 and row[4] == 0:
-                # Append the list
-                nds.append(row[1])
-        return nds
+        lst_2 = [[], [], []]
+        # For each node of the dictionary
+        for node, values in dictionary.items():
+            # If visibility = 0 and junction = 0
+            if values[0] == 1 and values[2] == 0:
+                cursor_1 = self.cnxn.cursor()
+                cursor_2 = self.cnxn.cursor()
+                # Get the link where our node the FromNodeID
+                cursor_1.execute("SELECT * FROM dbo.NEW_LINKS WHERE FromNodeID=?", (node,))
+                row_1 = cursor_1.fetchone()
+                # Get the link where our node the ToNodeID
+                cursor_2.execute("SELECT * FROM dbo.NEW_LINKS WHERE ToNodeID=?", (node,))
+                row_2 = cursor_2.fetchone()
+                # If both links have the same TWOWAY attribute
+                if row_1[7] == row_2[7]:
+                    # Append the list
+                    lst_2[0].append(node)
+            # If visibility = 0 and junction = 20
+            elif values[0] == 1 and values[2] == 20:
+                cursor_1 = self.cnxn.cursor()
+                # Get both links where our node is the FromNodeID
+                cursor_1.execute("SELECT * FROM dbo.NEW_LINKS WHERE FromNodeID=?", (node,))
+                rows_2 = cursor_1.fetchall()
+                # Create a temporary list that will hold the TWOWAY attributes for both of our links
+                temp_list = []
+                for row_2 in rows_2:
+                    temp_list.append(row_2[7])
+                # If both links are TWOWAY
+                if temp_list[0] == 1 and temp_list[1] == 1:
+                    # Append the list
+                    lst_2[1].append(node)
+            # If visibility = 0 and junction = 30
+            elif values[0] == 1 and values[2] == 30:
+                cursor_1 = self.cnxn.cursor()
+                # Get both links where our node is the ToNodeID
+                cursor_1.execute("SELECT * FROM dbo.NEW_LINKS WHERE ToNodeID=?", (node,))
+                rows_3 = cursor_1.fetchall()
+                # Create a temporary list that will hold the TWOWAY attributes for both of our links
+                temp_list_1 = []
+                for row_3 in rows_3:
+                    temp_list_1.append(row_3[7])
+                # If both links are TWOWAY
+                if temp_list_1[0] == 1 and temp_list_1[1] == 1:
+                    # Append the list
+                    lst_2[2].append(node)
+        return lst_2
 
-    def adjust_connections(self, list_1, list_2):
-        """ This method takes a list of nodes we want to delete and a list of 2 dictionaries with the connections of all
-        the nodes and adjust the connections between the nodes
-        @Param list_1 is the list with the nodes we want to delete
-        @Param list _2 is the list with the 2 dictionaries
-        @Return is a list with the 2 dictionaries after we fix the connections """
+    def adjust_connections(self, list_1):
+        """ This method takes a list with 3 sub-lists of nodes we want to delete and fixes the links in the sql table
+        @Param list_1 is the list with the sub-lists"""
 
-        # list_2[0] is the dictionary that holds the nodes we can travel to, from the key node
-        to_dict = list_2[0]
-        # list_2[1] is the dictionary that holds the nodes we can travel from, towards the key node
-        from_dict = list_2[1]
-        # For every node in the list of nodes we want to delete
-        for node in list_1:
-            # New starting node
-            start_node = from_dict[node][0]
-            # New destination node
-            end_node = to_dict[node][0][0]
-            # Cost to travel from the deleted node towards the destination node
-            trav_cost = to_dict[node][0][2]
-            # We enter the dictionary with the nodes we can travel to and use the starting node as key
-            for nd in to_dict[start_node]:
-                # If any of the nodes we can travel to is the same as the node we want to be deleted
-                if nd[0] == node:
-                    # Then replace it with the end_node
-                    nd[0] = end_node
-                    # And adjust the cost to travel the new link
-                    nd[2] = nd[2] + trav_cost
-                    trav_cost = nd[2]
-                    self.cnxn.cursor().execute("UPDATE dbo."+self.links+" SET TravCost=? WHERE ToNodeID=?", (trav_cost, node,))
-                    self.cnxn.commit()
-                    del to_dict[node]
-            self.cnxn.cursor().execute("UPDATE dbo."+self.links+" SET ToNodeID=? WHERE ToNodeID=?", (end_node, node,))
+        # For every node in the first list of nodes we want to delete
+        for node in list_1[0]:
+            # Create a cursor
+            cursor_1 = self.cnxn.cursor()
+            # Get the link that has our node as starting point
+            cursor_1.execute("SELECT * FROM NEW_LINKS_2 WHERE FromNodeID=?", (node,))
+            row = cursor_1.fetchone()
+            # Set the appropriate values to the variables
+            start_cost_2 = row[8]
+            trav_cost_2 = row[5]
+            end_node_2 = row[3]
+            # Close the cursor
+            cursor_1.close()
+            # Create a cursor
+            cursor_2 = self.cnxn.cursor()
+            # Get the link that has our node as ending point
+            cursor_2.execute("SELECT * FROM NEW_LINKS_2 WHERE ToNodeId=?", (node,))
+            row = cursor_2.fetchone()
+            # Set the appropriate values to the variables
+            trav_cost_1 = row[5]
+            # Close the cursor
+            cursor_2.close()
+            # Update the information of the database
+            self.cnxn.cursor().execute("UPDATE dbo."+self.links+" SET TravCost=?, StartCost2=? WHERE ToNodeID=?", (trav_cost_1 + trav_cost_2, start_cost_2, node,))
             self.cnxn.commit()
+            # Reset the trav_cost
+            trav_cost_1 = 0
+            # Update the information of the database
+            self.cnxn.cursor().execute("UPDATE dbo."+self.links+" SET ToNodeID=? WHERE ToNodeID=?", (end_node_2, node,))
+            self.cnxn.commit()
+            # Delete the unnecessary link
+            self.cnxn.cursor().execute("DELETE FROM dbo."+self.links+" WHERE FromNodeID=?", (node,))
+            self.cnxn.commit()
+        # For every node in the second list of nodes we want to delete
+        for node in list_1[1]:
+            # Create a cursor
+            cursor_1 = self.cnxn.cursor()
+            # Select both links where that have our node as starting point
+            cursor_1.execute("SELECT * FROM NEW_LINKS_2 WHERE FromNodeID=?", (node,))
+            rows = cursor_1.fetchall()
+            # Set a counter
+            count = 1
+            # Save the information of both links in two lists
+            for row in rows:
+                if count == 1:
+                    link_1 = [row[x] for x in range(0, 9)]
+                if count == 2:
+                    link_2 = [row[x] for x in range(0, 9)]
+                count += 1
+            # If the first link's ending node is in third list of nodes we want to delete then we must have the new link
+            # pointing towards that node
+            if link_1[3] in list_1[2]:
+                # Set the appropriate values to the variables
+                link_id_to_stay = link_1[1]
+                link_id_to_go = link_2[1]
+                start_node = link_2[3]
+                end_node = link_1[3]
+                start_cost_1 = link_2[8]
+                start_cost_2 = link_1[8]
+                trav_cost_1 = link_1[5]
+                trav_cost_2 = link_2[5]
+                # Create a cursor
+                cursor_2 = self.cnxn.cursor()
+                # Update the information of the database
+                cursor_2.execute("UPDATE dbo."+self.links+" SET ToNodeID=?, StartCost=?, TravCost=?, StartCost2=?, FromNodeID=? WHERE LinkID=?", (end_node, start_cost_1, trav_cost_1 + trav_cost_2, start_cost_2, start_node, link_id_to_stay,))
+                cursor_2.commit()
+                # Delete the unnecessary link
+                cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
+                cursor_2.commit()
+                # Close the cursor
+                cursor_2.close()
+            # If the second link's ending node is in third list of nodes we want to delete then we must have the new
+            # link pointing towards that node
+            elif link_2[3] in list_1[2]:
+                # Set the appropriate values to the variables
+                link_id_to_stay = link_2[1]
+                link_id_to_go = link_1[1]
+                start_node = link_1[3]
+                end_node = link_2[3]
+                start_cost_1 = link_1[8]
+                start_cost_2 = link_2[8]
+                trav_cost_1 = link_2[5]
+                trav_cost_2 = link_1[5]
+                # Create a cursor
+                cursor_2 = self.cnxn.cursor()
+                # Update the information of the database
+                cursor_2.execute("UPDATE dbo."+self.links+" SET ToNodeID=?, StartCost=?, TravCost=?, StartCost2=?, FromNodeID=? WHERE LinkID=?", (end_node, start_cost_1, trav_cost_1 + trav_cost_2, start_cost_2, start_node, link_id_to_stay,))
+                cursor_2.commit()
+                # Delete the unnecessary link
+                cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
+                cursor_2.commit()
+                # Close the cursor
+                cursor_2.close()
+            # If none of the link's ending point is in the third list of nodes we want to delete then we don't have a
+            # certain preference for the direction of the new link
+            else:
+                # Set the appropriate values to the variables
+                link_id_to_stay = link_1[1]
+                link_id_to_go = link_2[1]
+                start_node = link_2[3]
+                end_node = link_1[3]
+                start_cost_1 = link_2[8]
+                start_cost_2 = link_1[8]
+                trav_cost_1 = link_1[5]
+                trav_cost_2 = link_2[5]
+                # Create a cursor
+                cursor_2 = self.cnxn.cursor()
+                # Update the information of the database
+                cursor_2.execute("UPDATE dbo."+self.links+" SET ToNodeID=?, StartCost=?, TravCost=?, StartCost2=?, FromNodeID=? WHERE LinkID=?", (end_node, start_cost_1, trav_cost_1 + trav_cost_2, start_cost_2, start_node, link_id_to_stay,))
+                cursor_2.commit()
+                # Delete the unnecessary link
+                cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
+                cursor_2.commit()
+                # Close the cursor
+                cursor_2.close()
+        # For every node in the third list of nodes we want to delete
+        for node in list_1[2]:
+            # Create a cursor
+            cursor_1 = self.cnxn.cursor()
+            # Get both links that have our node as ending point
+            cursor_1.execute("SELECT * FROM NEW_LINKS_2 WHERE ToNodeID=?", (node,))
+            rows = cursor_1.fetchall()
+            count = 1
+            # Set the appropriate values to the variables
+            for row in rows:
+                if count == 1:
+                    link_id_to_stay = row[1]
+                    start_node = row[2]
+                    start_cost_1 = row[4]
+                    trav_cost_1 = row[5]
+                if count == 2:
+                    link_id_to_go = row[1]
+                    end_node = row[2]
+                    start_cost_2 = row[4]
+                    trav_cost_2 = row[5]
+                count += 1
+            # Create a cursor
+            cursor_2 = self.cnxn.cursor()
+            # Update the information of the database
+            cursor_2.execute("UPDATE dbo."+self.links+" SET ToNodeID=?, StartCost=?, TravCost=?, StartCost2=?, FromNodeID=? WHERE LinkID=?", ( end_node, start_cost_1, trav_cost_1 + trav_cost_2, start_cost_2, start_node, link_id_to_stay,))
+            cursor_2.commit()
+            # Delete the unnecessary link
+            cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
+            cursor_2.commit()
+            # Close the cursor
+            cursor_2.close()
 
-            # Remove the node we want to delete from the list of the nodes where we can travel from towards the destination node
-            from_dict[end_node].remove(node)
-            # Append the same list with the new starting node
-            from_dict[end_node].append(start_node)
-            del from_dict[node]
-        return [to_dict, from_dict]
+    def update_database(self, rows):
+        """This method resets the FID column
+        @Param list_0 is the list with the nodes we want to delete"""
+        # Set a counter to zero
+        counter = 1
+        # Get all the rows of the table
 
-    def adjust_information(self, list_1, dict_1):
+        # For each row
+        for row in rows:
+            # Set the FID equal to the counter variable
+            self.cnxn.cursor().execute("UPDATE dbo."+self.links+" SET FID=? WHERE LinkID=?", (counter, row.LinkID))
+            self.cnxn.commit()
+            counter += 1
+
+    def adjust_information(self, list_1):
         """ This method inserts the correct information for the node after we remove it from a link
         @Param list_1 is the list with the nodes we want to be removed
         @Param dict_1 is the dictionary the holds the personal information for every node
         @Return is a similar dictionary with the correct data"""
 
         # For every node in list_1
-        for node in list_1:
-            # Set the juntion = 5 which means that the node has no connections to other nodes
-            dict_1[node][2] = 5
-            # Update the database
-            self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=5 WHERE ID=?", (node,))
-            self.cnxn.commit()
-        return dict_1
+        for part in list_1:
+            for node in part:
 
-    def build_dictionary(self, dict1, list0):
+                # Update the database
+                self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=5 WHERE ID=?", (node,))
+                self.cnxn.commit()
+
+    def create_fixed_list_of_dictionaries(self, rows):
+        """ This method creates 2 dictionaries
+        The first dictionary contains the ID of the nodes where we can move to (from the Key node) and the required
+        costs to do that.
+        The key of the first dictionary will be a node from the FromNodeID column.
+        The value of the key for the first dictionary will be a list of numerous 3 element sub-lists:
+        FromNodeID--->[[ToNodeID,StartCost,TravCost] , ....repeat....]
+        The second dictionary contains the ID of the nodes where we can travel from, towards the Key node.
+        The key of the second dictionary will be a node from the ToNodeID column.
+        The value of the key for the second dictionary will be a list of nodes:
+        ToNodeID--->[FromNodeID , ....repeat....]
+        @Param rows is the rows of the LINKS table
+        @Return is a list with the dictionaries """
+
+        # Create empty Dictionaries
+        temp_dict_0 = {}
+        temp_dict_1 = {}
+        # For each row of the rows:
+        for row in rows:
+            # Building the Temp_Dict0:
+            # Try to append the list with the values for the key: row[2] = FromNodeID
+            try:
+                temp_dict_0[row[2]].append([row[3], row[4], row[5]])
+            # and if you cannot find it, create the key and assign the first element of the list as value
+            except:
+                temp_dict_0[row[2]] = [[row[3], row[4], row[5]]]
+            # Building the Temp_Dict1:
+            # Try to append the list with the values for the key: row[3] = ToNodeID
+            try:
+                temp_dict_1[row[3]].append(row[2])
+            # and if you cannot find it, create the key and assign the first element of the list as value
+            except:
+                temp_dict_1[row[3]] = [row[2]]
+            if row[7] == 1:
+                try:
+                    temp_dict_0[row[3]].append([row[2], row[8], row[5]])
+                except:
+                    temp_dict_0[row[3]] = [[row[2], row[8], row[5]]]
+
+                try:
+                    temp_dict_1[row[2]].append(row[3])
+                except:
+                    temp_dict_1[row[2]] = [row[3]]
+
+        return [temp_dict_0, temp_dict_1]
+
+    def build_dictionary(self, dict_1, list_0):
         """ This method builds the adjacency dictionary
         @Param dict is the dictionary with the personal data of each node (visibility and class)
         @Param list is a list with the dictionaries tha hold the connectivity of each node in relation to the others
@@ -238,45 +464,24 @@ class Conversion:
         for row in rows:
             try:
                 # Checking if the Node does not connect to another node
-                if row[1] not in list0[0]:
+                if row[1] not in list_0[0]:
                     # Checking if you cannot travel to our node from another node
-                    if row[1] not in list0[1]:
-                        adjacency_dictionary[row[1]] = [dict1[row[1]], [[], []]]
+                    if row[1] not in list_0[1]:
+                        adjacency_dictionary[row[1]] = [dict_1[row[1]], [[], []]]
                     else:
-                        adjacency_dictionary[row[1]] = [dict1[row[1]], [[], list0[1][row[1]]]]
+                        adjacency_dictionary[row[1]] = [dict_1[row[1]], [[], list_0[1][row[1]]]]
                 # Checking if you cannot traver to our node from another node
-                elif row[1] not in list0[1]:
+                elif row[1] not in list_0[1]:
                     # Checking if the Node does not connect to another node
-                    if row[1] not in list0[0]:
-                        adjacency_dictionary[row[1]] = [dict1[row[1]], [[], []]]
+                    if row[1] not in list_0[0]:
+                        adjacency_dictionary[row[1]] = [dict_1[row[1]], [[], []]]
                     else:
-                        adjacency_dictionary[row[1]] = [dict1[row[1]], [list0[0][row[1]], []]]
+                        adjacency_dictionary[row[1]] = [dict_1[row[1]], [list_0[0][row[1]], []]]
                 else:
-                    adjacency_dictionary[row[1]] = [dict1[row[1]], [list0[0][row[1]], list0[1][row[1]]]]
+                    adjacency_dictionary[row[1]] = [dict_1[row[1]], [list_0[0][row[1]], list_0[1][row[1]]]]
             except:
                 pass
         return adjacency_dictionary
-
-    def update_database(self, list_0):
-        """This method deletes the non desired links from the our sql table
-        and resets the FID column
-        @Param list_0 is the list with the nodes we want to delete"""
-
-        # For evert node is our list
-        for node in list_0:
-            # Delete the links whose starting point in the node in list_0
-            self.cnxn.cursor().execute("DELETE FROM dbo."+self.links+" WHERE FromNodeID=?", (node,))
-            self.cnxn.commit()
-        # Set a counter to zero
-        counter = 0
-        # Get all the rows of the table
-        rows=self.get_rows_of_table("SELECT * FROM dbo."+self.links)
-        # For each row
-        for row in rows:
-            # Set the FID equal to the counter variable
-            self.cnxn.cursor().execute("UPDATE dbo."+self.links+" SET FID=? WHERE FID=?", (counter, row.FID))
-            self.cnxn.commit()
-            counter += 1
 
     def print_dictionary(self, dict2):
         """This method takes a dictionary and prints it in a pretty way
@@ -301,30 +506,14 @@ class Conversion:
                 print ""
                 print ""
 
-    def save_to_csv(self, dictionary, name_of_file):
-        """ This method takes saves a dictionary to a csv file
-        @Param Dictionary is our dictionary
-        @Param Name_of_file is the name of the file in which the dictionary will be saved """
-
-        w = csv.writer(open(name_of_file, "w"))
-        for key, val in dictionary.items():
-            w.writerow([str(key)+"--->", val])
-
-    def ask_name_of_file(self):
-        """T his method asks the user to give a name for the csv file
-        @Return is tha name of the file """
-
-        fl = raw_input('Enter a file name: ')
-        return fl
-
 
 def main():
     """ main class here."""
     # Create a connection to the database and the desired tables
-    connection = Connect(raw_input('Type the name of the node table: ').upper(), raw_input('Type the name of the link table: ').upper())
+    connection = Connect("NEW_NODES_2", "NEW_LINKS_2")
     # Create the adjacency Dictionary
     lis = Conversion(connection.nodes, connection.links, connection.cnxn)
-    print lis.NodesToRemove
-
+    print lis.list_of_nodes_to_remove
+    print lis.dictionary_of_personal_data
 if __name__ == '__main__':
     main()
