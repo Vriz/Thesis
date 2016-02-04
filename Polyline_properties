@@ -1,0 +1,111 @@
+__author__ = 'vriz'
+# !/usr/bin/env python
+#  -*-coding: utf-8-*-
+"""This module takes a Poly-line's coordinates as a list, calculates it's length, splits the link in two, given a
+certain coordinate and also splits the link in two, given a certain length"""
+import math
+class LineProperties:
+    def __init__(self, coordinates, point, distance):
+        self.coordinates = coordinates
+        self.point = point
+        self.distance = distance
+        self.length = self.calculate_length(self.coordinates)
+        self.links_1 = self.split_link_by_point(self.coordinates, self.point)
+        self.links_2 = self.split_link_by_distance(self.coordinates, self.distance)
+
+    def calculate_ds(self, point_1, point_2):
+        """This method calculates the distance between two points
+        @Param point_1 is the first point
+        @Param point_2 is the second point
+        @Return is the distance"""
+
+        # The x attribute of the first point
+        x_1 = point_1[0]
+        # The y attribute of the first point
+        y_1 = point_1[1]
+        # The x attribute of the second point
+        x_2 = point_2[0]
+        # The y attribute of the second point
+        y_2 = point_2[1]
+        # Calculate the ds
+        dx = x_2 - x_1
+        dy = y_2 - y_1
+        ds = math.sqrt(dx * dx + dy * dy)
+        return ds
+
+    def calculate_length(self, coordinates_list):
+        """This method calculates the length of a polyline
+        @Param coordinates_list is the list that holds the coordinates of the polyline
+        @Return is the length of the polyline"""
+
+        xy = coordinates_list
+        # Set length to zero
+        link_length = 0
+        # For every coordinate of the polyline except the last one
+        for i in range(0, len(coordinates_list)-1):
+            # Calculate the ds between a point and its next one
+            ds = self.calculate_ds(xy[i], xy[i+1])
+            # Add it to the length
+            link_length += ds
+        return link_length
+
+    def split_link_by_point(self, coordinates_list, point):
+        """This method splits a link at a certain point
+        @Param coordinates_list is the list that holds the coordinates of the polyline
+        @Param point is the point where we want the link to be split
+        @Return is a list with the two polylines"""
+
+        # Get the index of the point in the coordinates_list
+        point_index = coordinates_list.index(point)
+        # First link will from the start until the point included
+        link_1 = coordinates_list[0:point_index+1]
+        # Seconf link will be from the point until the end
+        link_2 = coordinates_list[point_index:len(coordinates_list)]
+        return [link_1, link_2]
+
+    def split_link_by_distance(self, coordinates_list, distance):
+        """This method splits a link at a certain distance from the start
+        @Param coordinates_list is the list that holds the coordinates of the polyline
+        @Param distance is the distance at which we want to spit the link
+        @Return is a list with the two polylines"""
+        xy = coordinates_list
+        link_length = 0
+        # For every coordinate of the polyline except the last one
+        for i in range(0, len(coordinates_list)-1):
+            # Calculate the ds between a point and its next one
+            ds = self.calculate_ds(xy[i], xy[i+1])
+            # Add it to the length
+            link_length += ds
+            # If the length at that point is equal or larger than the distance given:
+            if link_length >= distance:
+                # Split the link at that point
+                point_to_split = coordinates_list[i]
+                point_index = coordinates_list.index(point_to_split)
+                link_1 = coordinates_list[0:point_index+1]
+                link_2 = coordinates_list[point_index:len(coordinates_list)]
+                break
+            else:
+                pass
+        return [link_1, link_2]
+
+
+def main():
+    """ main class here."""
+    line = [[x, x] for x in range(0, 30)]
+
+    polyline = LineProperties(line, [15, 15], 31)
+    print line
+    print
+    print polyline.length
+    print
+    print polyline.links_1[0]
+    print
+    print polyline.links_1[1]
+    print
+    print polyline.links_2[0]
+    print
+    print polyline.links_2[1]
+
+
+if __name__ == '__main__':
+    main()
