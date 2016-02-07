@@ -1,0 +1,127 @@
+__author__ = 'vriz'
+# !/usr/bin/env python
+#  -*-coding: utf-8-*-
+"""This module takes node-centric table, a link-centric table, a certain node id and a distance. Then changes the
+visibility of the nodes that are in greater distance (given distance) from the node (node id) and removes all the
+links that are associated with those nodes"""
+
+
+import pyodbc
+import math
+
+
+class Connect:
+    """ Connects us to the database """
+    def __init__(self, nodes, links):
+        """ Connects us to the database where the node-table and link-table are located"""
+
+        self.cnxn = pyodbc.connect('Trusted_Connection=yes', driver='{SQL Server}', server='localhost', database='PracticeCopy1')
+        self.nodes = nodes
+        self.links = links
+
+
+class ChangeVisibilityBasedOnDistance:
+
+    def __init__(self, nodes, links, cnxn, node_id, distance):
+        self.nodes = nodes
+        self.links = links
+        self.cnxn = cnxn
+        self.node_id = node_id
+        self.distance = distance
+        # Get the list of the distant nodes
+        self.distant_nodes = self.get_the_list_of_distant_nodes(self.node_id, self.distance)
+        # Change their visibility
+        self.change_visibility(self.distant_nodes)
+        # Remove the links
+        self.remove_links(self.distant_nodes)
+
+    def calculate_ds(self, point_1, point_2):
+        """This method calculates the distance between two points
+        @Param point_1 is the first point
+        @Param point_2 is the second point
+        @Return is the distance"""
+
+        # The x attribute of the first point
+        x_1 = point_1[0]
+        # The y attribute of the first point
+        y_1 = point_1[1]
+        # The x attribute of the second point
+        x_2 = point_2[0]
+        # The y attribute of the second point
+        y_2 = point_2[1]
+        # Calculate the ds
+        dx = x_2 - x_1
+        dy = y_2 - y_1
+        ds = math.sqrt(dx * dx + dy * dy)
+        return ds
+
+    def get_the_list_of_distant_nodes(self, node_id, distance):
+        """This method finds the nodes of the distant nodes
+        @Param node_id is our main node
+        @Param distance is the distance in which we want our nodes to be located
+        @Return is a list with the distant nodes"""
+
+        # Insert a cursor
+        cursor_1 = self.cnxn.cursor()
+        # Select the row that holds the information of our node
+        cursor_1.excecute("SELECT ID FROM dbo."+self.nodes+"WHERE ID=?", (node_id,))
+        row = cursor_1.fetchone()
+        # Set its coordinates as the  primary coordinates
+        primary_node_coord = row.COORDINATESS
+        # Close the cursor
+        cursor_1.close()
+        # Insert a second cursor
+        cursor_2 = self.cnxn.cursor()
+        # Select all the rows of the nodes table
+        cursor_2.excecute("SELECT ID, COORDINATES FROM dbo."+self.nodes)
+        rows = cursor_2.fetchall()
+        # Create an empty list
+        nodes_list = []
+        # For every row in rows
+        for row in rows:
+            # If the node id of the row is not the same as the node_id (node id giver by the user)
+            if row.ID != node_id:
+                # Set the coordinates each node as the secondary coordinates
+                secondary_node_coord = row.COORDINATES
+                # If the distance between the two nodes is greater than the distance given by the user
+                if self.calculate_ds(primary_node_coord, secondary_node_coord) >= distance:
+                    # Append the nodes list
+                    nodes_list.append(row.ID)
+        # Close the cursor
+        cursor_2.close()
+        return nodes_list
+
+    def change_visibility(self, nodes):
+        """This method changes the visibility of the distant nodes
+        @Param nodes is the list with the distant nodes"""
+
+        # Insert a cursor
+        cursor_3 = self.cnxn.cursor()
+        # For every node is the distant nodes list
+        for node in nodes:
+            # Set the visibility to 2
+            cursor_3.excecute("UPDATE dbo."+self.nodes+" SET VISIBILITY=2 WHERE ID=?", (node,))
+            # Close the cursor
+        cursor_3.close()
+
+    def remove_links(self, nodes):
+        """This method removes all the links associated with the distant nodes
+        @Param nodes is the distant nodes list"""
+        # Insert a cursor
+        cursor_4 = self.cnxn.cursor()
+        # For every node is the distant nodes list
+        for node in nodes:
+            # Remove the links that have the node as starting point or ending point
+            cursor_4.excecute("DELETE FROM dbo."+self.links+" WHERE (FromNodeID=?) OR (ToNodeID=?)", (node, node))
+        # Close the cursor
+        cursor_4.close()
+
+
+def main():
+    """ main class here."""
+    # Create a connection to the database and the desired tables
+    connection = Connect(raw_input('Type the name of the node table: ').upper(), raw_input('Type the name of the link table: ').upper())
+    lis = ChangeVisibilityBasedOnDistance(connection.nodes, connection.links, connection.cnxn, 112, 2000)
+
+if __name__ == '__main__':
+    main()
