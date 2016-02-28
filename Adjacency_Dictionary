@@ -39,11 +39,12 @@ class Conversion:
         self.list_of_nodes_to_remove = self.nodes_to_remove(self.dictionary_of_personal_data)
 
         # Adjust the personal information for the nodes we want to delete
-        self.adjust_connections(self.list_of_nodes_to_remove)
+        self.adjust_links(self.list_of_nodes_to_remove)
 
         # Reset the FID column
         self.update_database(self.get_rows_of_table("SELECT * FROM dbo."+self.links))
-        
+
+        # Remove the unnecessary nodes
         self.adjust_information(self.list_of_nodes_to_remove)
         
         # Create a list with the 2 dictionaries that hold the connections of the nodes taking into consideration the
@@ -55,6 +56,79 @@ class Conversion:
 
         # Print it in a pretty way
         self.print_dictionary(self.Adjacency_Dictionary)
+        """cursor=self.cnxn.cursor()
+        cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE FID = 2 ")
+        row=cursor.fetchone()
+        self.list=row[0]
+        self.test = self.string_to_list(self.list)
+
+        cursor_1=self.cnxn.cursor()
+        cursor_1.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE FID = 4 ")
+        row=cursor_1.fetchone()
+        self.list_1=row[0]
+        self.test_1 = self.string_to_list(self.list_1)
+        self.TEST = self.connect_links(self.test, self.test_1, 1)
+        self.FINAL = self.string_to_database(self.TEST)"""
+
+    def string_to_list(self, input_string):
+        # Put all the letters in a list
+        lst = []
+        for letter in input_string:
+            lst.append(letter)
+        # Remove the unnecessary characters
+        for i in range(0, 12):
+            lst.pop(0)
+        lst = lst[:-1]
+        # Reform the String
+        string_1 = "".join(lst)
+        # Split the string on the spaces and put the parts on a list
+        lst_2 = string_1.split()
+        # Putting the coordinates in pairs and then in a list (For uniting links)
+        # Create the list that we are going to use as a base
+        final_list = []
+        # Create a temporary list
+        temp_list = []
+        i = 0
+        # For every coordinate in the list
+        for coord in lst_2:
+            # Append the temporary list with the coordinate
+            temp_list.append(coord)
+            # If the coordinate is in position 1,3,5,7...
+            if i % 2 != 0:
+                # Append the final list with the temporary one
+                final_list.append(temp_list)
+                # And empty the temporary one
+                temp_list = []
+            i += 1
+        return final_list
+
+    def connect_links(self, list_1, list_2, x):
+
+        if x == 1:
+            list_1 = list_1[:-1]
+            final_list = list_1 + list_2
+        elif x == 2:
+            list_1 = list_1[:-1]
+            list_1.reverse()
+            final_list = list_1 + list_2
+        else:
+            list_2 = list_2[:-1]
+            list_2.reverse()
+            final_list = list_1 + list_2
+        return final_list
+
+    def string_to_database(self, list_1):
+        lst_3 = []
+        # For every pair or coordinates
+        for part in list_1:
+            # For every coordinate
+            for coord in part:
+                # Append the list
+                lst_3.append(coord)
+                # Form the string
+        space=" "
+        final_sting = space.join(lst_3)
+        return final_sting
 
     def get_rows_of_table(self, sql_string):
         """ This method gives us the desired rows of an Sql table
@@ -124,13 +198,13 @@ class Conversion:
                         # Assign the values to each Key and set Junction = 0
                         # Junction = 0 means that the node connects two links that both have the same direction
                         temp_dict[node] = [row[2], row[3], 0]
-                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=0 WHERE ID=?", (node,))
+                        self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=0 WHERE ID=?", (node,))
                         self.cnxn.commit()
                     else:
                         # Assign the values to each Key and set Junction = 1
                         # Junction = 1 means that there more than 2 links coming to and leaving from our node
                         temp_dict[node] = [row[2], row[3], 1]
-                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=1 WHERE ID=?", (node,))
+                        self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=1 WHERE ID=?", (node,))
                         self.cnxn.commit()
             # If the node is a key only in the to_dict which means that you can only travel from the key node towards
             # other nodes
@@ -139,13 +213,13 @@ class Conversion:
                         # Assign the values to each Key and set Junction = 20
                         # Junction = 20 means that the node connects two link that both have our node as starting point
                         temp_dict[node] = [row[2], row[3], 20]
-                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=20 WHERE ID=?", (node,))
+                        self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=20 WHERE ID=?", (node,))
                         self.cnxn.commit()
                     else:
                         # Assign the values to each Key and set Junction = 2
                         # Junction = 2 means that there are more than 2 links that both have our node as staring point
                         temp_dict[node] = [row[2], row[3], 2]
-                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=2 WHERE ID=?", (node,))
+                        self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=2 WHERE ID=?", (node,))
                         self.cnxn.commit()
             # If the node is a key only in the from_dict which means that you can only travel towards the key node from
             #  other nodes
@@ -154,19 +228,19 @@ class Conversion:
                         # Assign the values to each Key and set Junction = 30
                         # Junction = 30 means that the node connects two links that both have our node as ending point
                         temp_dict[node] = [row[2], row[3], 30]
-                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=30 WHERE ID=?", (node,))
+                        self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=30 WHERE ID=?", (node,))
                         self.cnxn.commit()
                     else:
                         # Assign the values to each Key and set Junction = 3
                         # Junction = 3 means that there are more than 2 links that both have our node as ending point
                         temp_dict[node] = [row[2], row[3], 3]
-                        self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=3 WHERE ID=?", (node,))
+                        self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=3 WHERE ID=?", (node,))
                         self.cnxn.commit()
             # If the node in not a key in any dictionary which means it has no connections
             else:
                     # Assign the values to each Key and set Junction = 5
                     temp_dict[node] = [row[2], row[3], 5]
-                    self.cnxn.cursor().execute("UPDATE dbo.NEW_NODES SET JUNCTION=5 WHERE ID=?", (node,))
+                    self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=5 WHERE ID=?", (node,))
                     self.cnxn.commit()
         return temp_dict
 
@@ -184,10 +258,10 @@ class Conversion:
                 cursor_1 = self.cnxn.cursor()
                 cursor_2 = self.cnxn.cursor()
                 # Get the link where our node the FromNodeID
-                cursor_1.execute("SELECT * FROM dbo.NEW_LINKS WHERE FromNodeID=?", (node,))
+                cursor_1.execute("SELECT * FROM dbo.LINKS WHERE FromNodeID=?", (node,))
                 row_1 = cursor_1.fetchone()
                 # Get the link where our node the ToNodeID
-                cursor_2.execute("SELECT * FROM dbo.NEW_LINKS WHERE ToNodeID=?", (node,))
+                cursor_2.execute("SELECT * FROM dbo.LINKS WHERE ToNodeID=?", (node,))
                 row_2 = cursor_2.fetchone()
                 # If both links have the same TWOWAY attribute
                 if row_1[7] == row_2[7]:
@@ -197,7 +271,7 @@ class Conversion:
             elif values[0] == 1 and values[2] == 20:
                 cursor_1 = self.cnxn.cursor()
                 # Get both links where our node is the FromNodeID
-                cursor_1.execute("SELECT * FROM dbo.NEW_LINKS WHERE FromNodeID=?", (node,))
+                cursor_1.execute("SELECT * FROM dbo.LINKS WHERE FromNodeID=?", (node,))
                 rows_2 = cursor_1.fetchall()
                 # Create a temporary list that will hold the TWOWAY attributes for both of our links
                 temp_list = []
@@ -211,7 +285,7 @@ class Conversion:
             elif values[0] == 1 and values[2] == 30:
                 cursor_1 = self.cnxn.cursor()
                 # Get both links where our node is the ToNodeID
-                cursor_1.execute("SELECT * FROM dbo.NEW_LINKS WHERE ToNodeID=?", (node,))
+                cursor_1.execute("SELECT * FROM dbo.LINKS WHERE ToNodeID=?", (node,))
                 rows_3 = cursor_1.fetchall()
                 # Create a temporary list that will hold the TWOWAY attributes for both of our links
                 temp_list_1 = []
@@ -223,8 +297,8 @@ class Conversion:
                     lst_2[2].append(node)
         return lst_2
 
-    def adjust_connections(self, list_1):
-        """ This method takes a list with 3 sub-lists of nodes we want to delete and fixes the links in the sql table
+    def adjust_links(self, list_1):
+        """ This method takes a list with 3 sub-lists of nodes we want to delete and adjust the links in the sql table
         @Param list_1 is the list with the sub-lists"""
 
         # For every node in the first list of nodes we want to delete
@@ -232,7 +306,7 @@ class Conversion:
             # Create a cursor
             cursor_1 = self.cnxn.cursor()
             # Get the link that has our node as starting point
-            cursor_1.execute("SELECT * FROM NEW_LINKS_2 WHERE FromNodeID=?", (node,))
+            cursor_1.execute("SELECT * FROM LINKS WHERE FromNodeID=?", (node,))
             row = cursor_1.fetchone()
             # Set the appropriate values to the variables
             start_cost_2 = row[8]
@@ -240,20 +314,40 @@ class Conversion:
             end_node_2 = row[3]
             # Close the cursor
             cursor_1.close()
+
+            cursor = self.cnxn.cursor()
+            cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE FromNodeID=?", (node), )
+            row = cursor.fetchone()
+            second = row[0]
+            cursor.close()
+
             # Create a cursor
             cursor_2 = self.cnxn.cursor()
             # Get the link that has our node as ending point
-            cursor_2.execute("SELECT * FROM NEW_LINKS_2 WHERE ToNodeId=?", (node,))
+            cursor_2.execute("SELECT * FROM LINKS WHERE ToNodeId=?", (node,))
             row = cursor_2.fetchone()
             # Set the appropriate values to the variables
             trav_cost_1 = row[5]
             # Close the cursor
             cursor_2.close()
+
+            cursor = self.cnxn.cursor()
+            cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE ToNodeID=?", (node), )
+            row = cursor.fetchone()
+            first = row[0]
+            cursor.close()
+
+            string_to_database = self.string_to_database(self.connect_links(self.string_to_list(first), self.string_to_list(second), 1))
+
             # Update the information of the database
             self.cnxn.cursor().execute("UPDATE dbo."+self.links+" SET TravCost=?, StartCost2=? WHERE ToNodeID=?", (trav_cost_1 + trav_cost_2, start_cost_2, node,))
             self.cnxn.commit()
             # Reset the trav_cost
             trav_cost_1 = 0
+            #self.cnxn.cursor().execute("UPDATE LINKS SET GEOMETRY=NULL WHERE ToNodeID=?", (node), )
+            #self.cnxn.commit()
+            self.cnxn.cursor().execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE ToNodeID=?", (node), )
+            self.cnxn.commit()
             # Update the information of the database
             self.cnxn.cursor().execute("UPDATE dbo."+self.links+" SET ToNodeID=? WHERE ToNodeID=?", (end_node_2, node,))
             self.cnxn.commit()
@@ -265,16 +359,26 @@ class Conversion:
             # Create a cursor
             cursor_1 = self.cnxn.cursor()
             # Select both links where that have our node as starting point
-            cursor_1.execute("SELECT * FROM NEW_LINKS_2 WHERE FromNodeID=?", (node,))
+            cursor_1.execute("SELECT * FROM LINKS WHERE FromNodeID=?", (node,))
             rows = cursor_1.fetchall()
+            cursor_1.close()
             # Set a counter
             count = 1
             # Save the information of both links in two lists
             for row in rows:
                 if count == 1:
                     link_1 = [row[x] for x in range(0, 9)]
+                    cursor = self.cnxn.cursor()
+                    cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (link_1[1]), )
+                    row = cursor.fetchone()
+                    link_1_geom = row[0]
+                    cursor.close()
                 if count == 2:
                     link_2 = [row[x] for x in range(0, 9)]
+                    cursor = self.cnxn.cursor()
+                    cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (link_2[1]), )
+                    row = cursor.fetchone()
+                    link_2_geom = row[0]
                 count += 1
             # If the first link's ending node is in third list of nodes we want to delete then we must have the new link
             # pointing towards that node
@@ -288,6 +392,8 @@ class Conversion:
                 start_cost_2 = link_1[8]
                 trav_cost_1 = link_1[5]
                 trav_cost_2 = link_2[5]
+                first = link_2_geom
+                second = link_1_geom
                 # Create a cursor
                 cursor_2 = self.cnxn.cursor()
                 # Update the information of the database
@@ -296,6 +402,12 @@ class Conversion:
                 # Delete the unnecessary link
                 cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
                 cursor_2.commit()
+
+                string_to_database = self.string_to_database(self.connect_links(self.string_to_list(first), self.string_to_list(second), 2))
+
+                cursor_2.execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE LinkID=?", (link_id_to_stay,), )
+                cursor_2.commit()
+
                 # Close the cursor
                 cursor_2.close()
             # If the second link's ending node is in third list of nodes we want to delete then we must have the new
@@ -310,6 +422,9 @@ class Conversion:
                 start_cost_2 = link_2[8]
                 trav_cost_1 = link_2[5]
                 trav_cost_2 = link_1[5]
+                first = link_1_geom
+                second = link_2_geom
+                string_to_database = self.string_to_database(self.connect_links(self.string_to_list(first), self.string_to_list(second), 2))
                 # Create a cursor
                 cursor_2 = self.cnxn.cursor()
                 # Update the information of the database
@@ -317,6 +432,8 @@ class Conversion:
                 cursor_2.commit()
                 # Delete the unnecessary link
                 cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
+                cursor_2.commit()
+                cursor_2.execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE LinkID=?", (link_id_to_stay,), )
                 cursor_2.commit()
                 # Close the cursor
                 cursor_2.close()
@@ -332,6 +449,9 @@ class Conversion:
                 start_cost_2 = link_1[8]
                 trav_cost_1 = link_1[5]
                 trav_cost_2 = link_2[5]
+                first = link_1_geom
+                second = link_2_geom
+                string_to_database = self.string_to_database(self.connect_links(self.string_to_list(first), self.string_to_list(second), 2))
                 # Create a cursor
                 cursor_2 = self.cnxn.cursor()
                 # Update the information of the database
@@ -340,6 +460,9 @@ class Conversion:
                 # Delete the unnecessary link
                 cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
                 cursor_2.commit()
+
+                cursor_2.execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE LinkID=?", (link_id_to_stay,), )
+                cursor_2.commit()
                 # Close the cursor
                 cursor_2.close()
         # For every node in the third list of nodes we want to delete
@@ -347,7 +470,7 @@ class Conversion:
             # Create a cursor
             cursor_1 = self.cnxn.cursor()
             # Get both links that have our node as ending point
-            cursor_1.execute("SELECT * FROM NEW_LINKS_2 WHERE ToNodeID=?", (node,))
+            cursor_1.execute("SELECT * FROM LINKS WHERE ToNodeID=?", (node,))
             rows = cursor_1.fetchall()
             count = 1
             # Set the appropriate values to the variables
@@ -357,12 +480,25 @@ class Conversion:
                     start_node = row[2]
                     start_cost_1 = row[4]
                     trav_cost_1 = row[5]
+                    cursor = self.cnxn.cursor()
+                    cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (link_id_to_stay), )
+                    row = cursor.fetchone()
+                    link_1_geom = row[0]
+                    cursor.close()
                 if count == 2:
                     link_id_to_go = row[1]
                     end_node = row[2]
                     start_cost_2 = row[4]
                     trav_cost_2 = row[5]
+                    cursor = self.cnxn.cursor()
+                    cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (link_id_to_go), )
+                    row = cursor.fetchone()
+                    link_1_geom = row[0]
+                    cursor.close()
                 count += 1
+            first = link_1_geom
+            second = link_2_geom
+            string_to_database = self.string_to_database(self.connect_links(self.string_to_list(first), self.string_to_list(second), 3))
             # Create a cursor
             cursor_2 = self.cnxn.cursor()
             # Update the information of the database
@@ -370,6 +506,9 @@ class Conversion:
             cursor_2.commit()
             # Delete the unnecessary link
             cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
+            cursor_2.commit()
+
+            cursor_2.execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE LinkID=?", (link_id_to_stay,), )
             cursor_2.commit()
             # Close the cursor
             cursor_2.close()
@@ -394,10 +533,10 @@ class Conversion:
         @Param dict_1 is the dictionary the holds the personal information for every node
         @Return is a similar dictionary with the correct data"""
 
-        # For every node in list_1
+        # For every sub list of list_1
         for part in list_1:
+            # For every node
             for node in part:
-
                 # Update the database
                 self.cnxn.cursor().execute("UPDATE dbo.NODES SET JUNCTION=5 WHERE ID=?", (node,))
                 self.cnxn.commit()
@@ -510,10 +649,15 @@ class Conversion:
 def main():
     """ main class here."""
     # Create a connection to the database and the desired tables
-    connection = Connect("NEW_NODES_2", "NEW_LINKS_2")
+    connection = Connect("NODES", "LINKS")
     # Create the adjacency Dictionary
     lis = Conversion(connection.nodes, connection.links, connection.cnxn)
     print lis.list_of_nodes_to_remove
     print lis.dictionary_of_personal_data
+    """print lis.test
+    print lis.test_1
+    print"====="
+    print lis.TEST
+    print lis.FINAL"""
 if __name__ == '__main__':
     main()
