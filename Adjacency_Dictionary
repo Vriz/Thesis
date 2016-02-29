@@ -71,6 +71,10 @@ class Conversion:
         self.FINAL = self.string_to_database(self.TEST)"""
 
     def string_to_list(self, input_string):
+        """This method takes a string of coordinates and puts them in a list
+        @Param input_string is the string(x y, x y, x y) with the coordinates
+        @Return is a list[[x, y], [x, y] ,[x ,y]] with the same coordinates"""
+
         # Put all the letters in a list
         lst = []
         for letter in input_string:
@@ -103,21 +107,44 @@ class Conversion:
         return final_list
 
     def connect_links(self, list_1, list_2, x):
+        """This method takes 2 lists which contain the coordinates of the two links
+        and returns a list with the coordinates of the united links
+        @Param list_1 is the list with the coordinates of the first link
+        @Param list_2 is the list with the coordinates of the first link
+        @Param x is a variable that defines the way the two links are going to be united
+        @Return is the list withe united link's coordinates"""
 
+        # If x equals one
         if x == 1:
+            # Remove the last coordinate
             list_1 = list_1[:-1]
+            # Unite the links
             final_list = list_1 + list_2
+        # If x equals 2
         elif x == 2:
+            # Remove the last coordinate
             list_1 = list_1[:-1]
+            # Reverse the list
             list_1.reverse()
+            # Unite the links
             final_list = list_1 + list_2
+        # If x equals 3
         else:
+            # Remove the last coordinate
             list_2 = list_2[:-1]
+            # Reverse the list
             list_2.reverse()
+            # Unite the links
             final_list = list_1 + list_2
         return final_list
 
     def string_to_database(self, list_1):
+        """This method takes the list of the united links coordinates and forms the string
+        that we going to use in order to input the coordinates to the database
+        @Param list_1 is the the list with the united links coordiates
+        @Return is the string for the database"""
+
+        # Create an empty list
         lst_3 = []
         # For every pair or coordinates
         for part in list_1:
@@ -126,7 +153,7 @@ class Conversion:
                 # Append the list
                 lst_3.append(coord)
                 # Form the string
-        space=" "
+        space = " "
         final_sting = space.join(lst_3)
         return final_sting
 
@@ -314,11 +341,14 @@ class Conversion:
             end_node_2 = row[3]
             # Close the cursor
             cursor_1.close()
-
+            # Create a cursor
             cursor = self.cnxn.cursor()
-            cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE FromNodeID=?", (node), )
+            # Get the coordinates of the link
+            cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE FromNodeID=?", (node,))
             row = cursor.fetchone()
+            # Second is going to be the coordinates of the second link in line
             second = row[0]
+            # Close the cursor
             cursor.close()
 
             # Create a cursor
@@ -330,13 +360,15 @@ class Conversion:
             trav_cost_1 = row[5]
             # Close the cursor
             cursor_2.close()
-
+            # Create a cursor
             cursor = self.cnxn.cursor()
-            cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE ToNodeID=?", (node), )
+            # Get the coordinates of the link
+            cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE ToNodeID=?", (node,))
             row = cursor.fetchone()
+            # First is going to be the coordinates of the first link in line
             first = row[0]
             cursor.close()
-
+            # Form the string that we are going to use as input to the database
             string_to_database = self.string_to_database(self.connect_links(self.string_to_list(first), self.string_to_list(second), 1))
 
             # Update the information of the database
@@ -344,8 +376,7 @@ class Conversion:
             self.cnxn.commit()
             # Reset the trav_cost
             trav_cost_1 = 0
-            #self.cnxn.cursor().execute("UPDATE LINKS SET GEOMETRY=NULL WHERE ToNodeID=?", (node), )
-            #self.cnxn.commit()
+            # Update the information of the database
             self.cnxn.cursor().execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE ToNodeID=?", (node), )
             self.cnxn.commit()
             # Update the information of the database
@@ -369,15 +400,19 @@ class Conversion:
                 if count == 1:
                     link_1 = [row[x] for x in range(0, 9)]
                     cursor = self.cnxn.cursor()
+                    # Get the coordinates of the first link
                     cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (link_1[1]), )
                     row = cursor.fetchone()
+                    # Coordinates of the first links
                     link_1_geom = row[0]
                     cursor.close()
                 if count == 2:
                     link_2 = [row[x] for x in range(0, 9)]
                     cursor = self.cnxn.cursor()
+                    # Get the coordinates of the second link
                     cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (link_2[1]), )
                     row = cursor.fetchone()
+                    # Coordinates of the first links
                     link_2_geom = row[0]
                 count += 1
             # If the first link's ending node is in third list of nodes we want to delete then we must have the new link
@@ -402,7 +437,7 @@ class Conversion:
                 # Delete the unnecessary link
                 cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
                 cursor_2.commit()
-
+                # Form the string that we are going to use as input to the database
                 string_to_database = self.string_to_database(self.connect_links(self.string_to_list(first), self.string_to_list(second), 2))
 
                 cursor_2.execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE LinkID=?", (link_id_to_stay,), )
@@ -433,6 +468,7 @@ class Conversion:
                 # Delete the unnecessary link
                 cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
                 cursor_2.commit()
+                # Update the information of the database
                 cursor_2.execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE LinkID=?", (link_id_to_stay,), )
                 cursor_2.commit()
                 # Close the cursor
@@ -451,6 +487,7 @@ class Conversion:
                 trav_cost_2 = link_2[5]
                 first = link_1_geom
                 second = link_2_geom
+                # Form the string that we are going to use as input to the database
                 string_to_database = self.string_to_database(self.connect_links(self.string_to_list(first), self.string_to_list(second), 2))
                 # Create a cursor
                 cursor_2 = self.cnxn.cursor()
@@ -460,7 +497,7 @@ class Conversion:
                 # Delete the unnecessary link
                 cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
                 cursor_2.commit()
-
+                # Update the information of the database
                 cursor_2.execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE LinkID=?", (link_id_to_stay,), )
                 cursor_2.commit()
                 # Close the cursor
@@ -481,6 +518,7 @@ class Conversion:
                     start_cost_1 = row[4]
                     trav_cost_1 = row[5]
                     cursor = self.cnxn.cursor()
+                    # Get the coordinates of the first link
                     cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (link_id_to_stay), )
                     row = cursor.fetchone()
                     link_1_geom = row[0]
@@ -491,6 +529,7 @@ class Conversion:
                     start_cost_2 = row[4]
                     trav_cost_2 = row[5]
                     cursor = self.cnxn.cursor()
+                    # Get the coordinates of the second link
                     cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (link_id_to_go), )
                     row = cursor.fetchone()
                     link_1_geom = row[0]
@@ -507,7 +546,7 @@ class Conversion:
             # Delete the unnecessary link
             cursor_2.execute("DELETE FROM dbo."+self.links+" WHERE LinkID=?", (link_id_to_go,))
             cursor_2.commit()
-
+            # Update the information of the database
             cursor_2.execute("UPDATE LINKS SET GEOMETRY=geography::STGeomFromText('LINESTRING("+string_to_database+")', 4326) WHERE LinkID=?", (link_id_to_stay,), )
             cursor_2.commit()
             # Close the cursor
