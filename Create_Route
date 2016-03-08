@@ -1,7 +1,10 @@
 
 import pyodbc
 import math
-
+# !/usr/bin/env python
+#  -*-coding: utf-8-*-
+"""This module takes list of links, creates a route made of those links and an SQL table with the starting node,
+ending node, length and geometry of the route"""
 
 class Connect:
     """ Connects us to the database """
@@ -14,6 +17,7 @@ class Connect:
 
 
 class CreateRoute:
+    """Create the route bases on the links given in a list"""
 
     def __init__(self, nodes, links, cnxn, route_links):
 
@@ -21,12 +25,13 @@ class CreateRoute:
         self.nodes = nodes
         self.links = links
         self.route_links = route_links
+        # Create the route
         self.route = self.make_route(self.route_links)
-
+        # Calculate the distance
         self.route_distance = self.calculate_length(self.route)
-
+        # Find the starting point and ending node of the route
         self.start_and_end = self.start_and_end_node(self.route_links)
-
+        # Insert the route to an SQL table
         self.insert_route_to_database(self.route_distance, self.start_and_end)
 
     def calculate_ds(self, point_1, point_2):
@@ -48,6 +53,22 @@ class CreateRoute:
         c = 2 * math.asin(math.sqrt(a))
         km = 6367 * c
         return km
+
+    def calculate_min(self, distance_list):
+        """This method takes a list and returns the element with tha lowest value
+        @Param distance_list is a list of distances
+        @Return is the minimum of those distances"""
+
+        # Set the first element as minimum
+        min = distance_list[0]
+        # For each remaining element of the list
+        for i in range(1, len(distance_list)):
+            # If the distance is smaller than the minimum one
+            if distance_list[i] < min:
+                # Set that distance as minimum
+                min = distance_list[i]
+                
+        return min
 
     def calculate_length(self, coordinates_list):
         """This method calculates the length of a polyline
@@ -123,81 +144,183 @@ class CreateRoute:
         return final_list_2
 
     def list_to_string(self, lst):
+        """This method takes a list of float coordinates and forms the string to use as input to the database
+        @Param lst if the list of coordinates
+        @Return is the desired string"""
+        
+        # Set i to 1 in order to be able to dictate the first coordinate
         i = 1
+        # Create an empty string
         string = ""
+        # For every node in the list
         for node in lst:
+            # If it is the first node
             if i == 1:
                 string = string+str(node[0])+" "+str(node[1])
+            # For every other node
             else:
                 string = string+", "+str(node[0])+" "+str(node[1])
             i += 1
+            
         return string
 
     def make_route(self, id_list):
-
+        """This method takes a list of links and creates a route
+        @Param id_list is a list containing the id of the links that will form the route
+        @Return is a list that contains the coordinates of the route"""
+        
+        # Create a cursor
         cursor = self.cnxn.cursor()
+        # Get the coordinates of the first link in the list
         cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (id_list[0],))
         row = cursor.fetchone()
         string_geometry = row[0]
+        # Get the coordinates of the first link convert them to float coordinates and set the list of those coordinates
+        # as the route
         route = self.string_to_list(string_geometry)
+        # For the rest links in the id_list
         for i in range(1, len(id_list)):
+            #Create a cursor
             cursor_1 = self.cnxn.cursor()
+            # Get the coordinates of the link
             cursor_1.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (id_list[i],))
             row = cursor_1.fetchone()
             string_geometry = row[0]
+            # Get the coordinates of the link convert them to float coordinates and set the list of those coordinates
+            # as the list_geometry (the link that we want to add to our route)
             list_geometry = self.string_to_list(string_geometry)
+            # If the first coordinate of the route is the same as the last coordinate of the link we want to add
             if route[0] == list_geometry[-1]:
+                # Remove the last coordinate from the link
+                list_geometry = list_geometry[:-1]
+                # Add the link to the route
                 route = list_geometry + route
+            # If the first coordinate of the route is the same as the first coordinate of the link we want to add
             elif route[0] == list_geometry[0]:
+                # Remove the first element of the link
+                list_geometry = list_geometry[1:]
+                # Reverse the link
                 list_geometry.reverse()
+                # Add the link to the route
                 route = list_geometry + route
+            # If the last coordinate of the route is the same as the first coordinate of the link we want to add
             elif route[-1] == list_geometry[0]:
+                # Remove the first coordinate from the link
+                list_geometry = list_geometry[1:]
+                # Add the link to the route
                 route = route + list_geometry
-            else:
+            # If the last coordinate of the route is the same as the last coordinate of the link we want to add
+            elif route[-1] == list_geometry[-1]:
+                # Remove the last coordinate from the link
+                list_geometry = list_geometry[:-1]
+                # Reverse the link
                 list_geometry.reverse()
+                # Add the link to the route
                 route = route + list_geometry
+            # If nothing of the above is happening it means that at least two of the links given in the id_list
+            #  do not connect with each other. In that case:
+            else:
+                # First coordinate the route
+                route_start = route[0]
+                # Last coordinate of the route
+                route_end = route[-1]
+                # First coordinate of the link we want to add to the route
+                link_to_add_start = list_geometry[0]
+                # Last coordinate of the link we want to add to the route
+                link_to_add_end = list_geometry[-1]
+                # Calculate the distance of each possible combination between the start and and of the route and start
+                # and end of the link we want to add to the route
+                distance_1 = self.calculate_ds(route_start, link_to_add_start)
+                distance_2 = self.calculate_ds(route_start, link_to_add_end)
+                distance_3 = self.calculate_ds(route_end, link_to_add_start)
+                distance_4 = self.calculate_ds(route_end, link_to_add_end)
+                # Find the minimum of the those 4 distances
+                min = self.calculate_min([distance_1, distance_2, distance_3, distance_4])
+                # If the minimum distance is the one between the start of the route and the start of the link
+                #  we want to add 
+                if min == distance_1:
+                    # Reverse the link we want to add
+                    list_geometry.reverse()
+                    # Add the link to the route
+                    route = list_geometry + route
+                # If the minimum distance is the one between the start of the route and the end of the link
+                #  we want to add    
+                elif min == distance_2:
+                    # Add the link to the route
+                    route = list_geometry + route
+                # If the minimum distance is the one between the end of the route and the start of the link
+                #  we want to add
+                elif min == distance_3:
+                    # Add the link to the route
+                    route = route + list_geometry
+                # If the minimum distance is the one between the end of the route and the end of the link we want to add
+                else:
+                    # Reverse the link we want to add
+                    list_geometry.reverse()
+                    # Add the link to the route
+                    route = route + list_geometry
+
         return route
 
-    def start_and_end_node(self,id_list):
+    def start_and_end_node(self, id_list):
+        """This method finds the id of the starting and ending node of our route
+        @Param id_list is a list containing the id of the links that will form the route
+        @Return is a list with the starting and ending node"""
+        
+        # Create an empty list that we are going to put all the possible nodes that could be the ones we are looking for
         possible_nodes = []
+        # Create a cursor
         cursor = self.cnxn.cursor()
+        # The nodes we are looking are located in the first link of the id_list of the last link of the id_list
+        
+        # Append the possible nodes list with the FromNodeID and the ToNodeID of the first link
         cursor.execute("SELECT LinkID, FromNodeID, ToNodeID FROM LINKS WHERE LinkID = ?", (id_list[0]))
         row = cursor.fetchone()
         possible_nodes.append(row[1])
         possible_nodes.append(row[2])
+        # Append the possible nodes list with the FromNodeID and the ToNodeID of the last link
         cursor.execute("SELECT LinkID, FromNodeID, ToNodeID FROM LINKS WHERE LinkID = ?", (id_list[-1]))
         row = cursor.fetchone()
         possible_nodes.append(row[1])
         possible_nodes.append(row[2])
-        start=None
-        end=None
+        start = None
+        end = None
+        # For every node in the possible nodes list
         for node in possible_nodes:
-            node_coord = []
+            # Create a cursor
             cursor = self.cnxn.cursor()
+            # Get the coordinates of the node
             cursor.execute("SELECT GEOMETRY.Long, GEOMETRY.Lat FROM NODES WHERE ID=?", (node,))
             row = cursor.fetchone()
             node_coord = [row[1], row[0]]
-
+            # if the coordinates match the first coordinates of the route
             if node_coord == self.route[0]:
+                # Set the node as the starting node
                 start = node
+            # if the coordinates match the last coordinates of the route
             elif node_coord == self.route[-1]:
+                # Set the node as the ending node
                 end = node
             else:
                 pass
         return [start, end]
 
-
-
-
     def insert_route_to_database(self, distance, nodes):
+        """This method creates an SQL table and puts the route in it
+        @Param distance is the length of the route
+        @Param nodes is the list with starting and ending nodes"""
+        
+        # Create the table
         cursor = self.cnxn.cursor()
         cursor.execute("CREATE TABLE Route (FID int, FromNodeID int, ToNodeID int, Length float, GEOMETRY geography)")
         cursor.commit()
+        # Insert the data in the table
         cursor.execute("INSERT INTO Route (FID, FromNodeID, ToNodeID, Length) VALUES(1, ?, ?, ?)", (nodes[0], nodes[1], distance,))
         cursor.commit()
-
+        # Form the string to use as input for the geometry of the route
         sql_string = self.list_to_string(self.route)
         cursor = self.cnxn.cursor()
+        # Insert the geometry to the table
         cursor.execute("UPDATE Route SET GEOMETRY=geography::STGeomFromText('LINESTRING("+sql_string+")', 4326 )")
         cursor.commit()
 
