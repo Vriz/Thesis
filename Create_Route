@@ -1,0 +1,217 @@
+
+import pyodbc
+import math
+
+
+class Connect:
+    """ Connects us to the database """
+    def __init__(self, nodes, links):
+        """ Connects us to the database and asks for the names of the node=table and link-table """
+
+        self.cnxn = pyodbc.connect('Trusted_Connection=yes', driver='{SQL Server}', server='localhost', database='PracticeCopy1')
+        self.nodes = nodes
+        self.links = links
+
+
+class CreateRoute:
+
+    def __init__(self, nodes, links, cnxn, route_links):
+
+        self.cnxn = cnxn
+        self.nodes = nodes
+        self.links = links
+        self.route_links = route_links
+        self.route = self.make_route(self.route_links)
+
+        self.route_distance = self.calculate_length(self.route)
+
+        self.start_and_end = self.start_and_end_node(self.route_links)
+
+        self.insert_route_to_database(self.route_distance, self.start_and_end)
+
+    def calculate_ds(self, point_1, point_2):
+        """This method calculates the distance between two points
+        @Param point_1 is the first point
+        @Param point_2 is the second point
+        @Return is the distance in Km"""
+
+        latitude_1 = point_1[0]
+        longitude_1 = point_1[1]
+        latitude_2 = point_2[0]
+        longitude_2 = point_2[1]
+        # convert decimal degrees to radians
+        lon1, lat1, lon2, lat2 = map(math.radians, [longitude_1, latitude_1, longitude_2, latitude_2])
+        # haversine formula
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.asin(math.sqrt(a))
+        km = 6367 * c
+        return km
+
+    def calculate_length(self, coordinates_list):
+        """This method calculates the length of a polyline
+        @Param coordinates_list is the list that holds the coordinates of the polyline
+        @Return is the length of the polyline"""
+
+        xy = coordinates_list
+        # Set length to zero
+        link_length = 0
+        # For every coordinate of the polyline except the last one
+        for i in range(0, len(coordinates_list)-1):
+            # Calculate the ds between a point and its next one
+            ds = self.calculate_ds(xy[i], xy[i+1])
+            # Add it to the length
+            link_length += ds
+        return link_length
+
+    def string_to_list(self, input_string):
+        """This method takes a string of coordinates and puts them in a list
+        as floats
+        @Param input_string is the string(x y, x y, x y) with the coordinates
+        @Return is a list[[x, y], [x, y] ,[x ,y]] with the same coordinates"""
+
+        # Put all the letters in a list
+        lst = []
+        for letter in input_string:
+            lst.append(letter)
+        # Remove the unnecessary characters
+        for i in range(0, 12):
+            lst.pop(0)
+        lst = lst[:-1]
+        # Reform the String
+        string_1 = "".join(lst)
+        # Split the string on the spaces and put the parts on a list
+        lst_2 = string_1.split()
+        # Putting the coordinates in pairs and then in a list (For uniting links)
+        # Create the list that we are going to use as a base
+        final_list = []
+        # Create a temporary list
+        temp_list = []
+        i = 0
+        # For every coordinate in the list
+        for coord in lst_2:
+            # Append the temporary list with the coordinate
+            temp_list.append(coord)
+            # If the coordinate is in position 1,3,5,7...
+            if i % 2 != 0:
+                # Append the final list with the temporary one
+                final_list.append(temp_list)
+                # And empty the temporary one
+                temp_list = []
+            i += 1
+        # Create an empty list that we are going to store the pairs of coordinates as floats
+        final_list_2 = []
+        # For every pair o coordinates in final list we want to make a pair of float coordinates
+        for part in final_list:
+            # Create a temporary list
+            temp_list_2 = []
+            # For every 'string' coordinate
+            for cord in part:
+                # If the 'string' coordinate does not end in comma
+                if cord[-1] != ",":
+                    # Append the list with the float of the 'string' coordinate
+                    temp_list_2.append(float(cord))
+                # If the 'string' coordinate ends in comma
+                if cord[-1] == ",":
+                    # Remove the comma
+                    word = cord[:-1]
+                    # Append the list with the the float of the 'string' coordinate
+                    temp_list_2.append(float(word))
+                # Append the final list with the temporary list
+            final_list_2.append(temp_list_2)
+        return final_list_2
+
+    def list_to_string(self, lst):
+        i = 1
+        string = ""
+        for node in lst:
+            if i == 1:
+                string = string+str(node[0])+" "+str(node[1])
+            else:
+                string = string+", "+str(node[0])+" "+str(node[1])
+            i += 1
+        return string
+
+    def make_route(self, id_list):
+
+        cursor = self.cnxn.cursor()
+        cursor.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (id_list[0],))
+        row = cursor.fetchone()
+        string_geometry = row[0]
+        route = self.string_to_list(string_geometry)
+        for i in range(1, len(id_list)):
+            cursor_1 = self.cnxn.cursor()
+            cursor_1.execute("SELECT GEOMETRY.STAsText() FROM dbo.LINKS WHERE LinkID=?", (id_list[i],))
+            row = cursor_1.fetchone()
+            string_geometry = row[0]
+            list_geometry = self.string_to_list(string_geometry)
+            if route[0] == list_geometry[-1]:
+                route = list_geometry + route
+            elif route[0] == list_geometry[0]:
+                list_geometry.reverse()
+                route = list_geometry + route
+            elif route[-1] == list_geometry[0]:
+                route = route + list_geometry
+            else:
+                list_geometry.reverse()
+                route = route + list_geometry
+        return route
+
+    def start_and_end_node(self,id_list):
+        possible_nodes = []
+        cursor = self.cnxn.cursor()
+        cursor.execute("SELECT LinkID, FromNodeID, ToNodeID FROM LINKS WHERE LinkID = ?", (id_list[0]))
+        row = cursor.fetchone()
+        possible_nodes.append(row[1])
+        possible_nodes.append(row[2])
+        cursor.execute("SELECT LinkID, FromNodeID, ToNodeID FROM LINKS WHERE LinkID = ?", (id_list[-1]))
+        row = cursor.fetchone()
+        possible_nodes.append(row[1])
+        possible_nodes.append(row[2])
+        start=None
+        end=None
+        for node in possible_nodes:
+            node_coord = []
+            cursor = self.cnxn.cursor()
+            cursor.execute("SELECT GEOMETRY.Long, GEOMETRY.Lat FROM NODES WHERE ID=?", (node,))
+            row = cursor.fetchone()
+            node_coord = [row[1], row[0]]
+
+            if node_coord == self.route[0]:
+                start = node
+            elif node_coord == self.route[-1]:
+                end = node
+            else:
+                pass
+        return [start, end]
+
+
+
+
+    def insert_route_to_database(self, distance, nodes):
+        cursor = self.cnxn.cursor()
+        cursor.execute("CREATE TABLE Route (FID int, FromNodeID int, ToNodeID int, Length float, GEOMETRY geography)")
+        cursor.commit()
+        cursor.execute("INSERT INTO Route (FID, FromNodeID, ToNodeID, Length) VALUES(1, ?, ?, ?)", (nodes[0], nodes[1], distance,))
+        cursor.commit()
+
+        sql_string = self.list_to_string(self.route)
+        cursor = self.cnxn.cursor()
+        cursor.execute("UPDATE Route SET GEOMETRY=geography::STGeomFromText('LINESTRING("+sql_string+")', 4326 )")
+        cursor.commit()
+
+
+def main():
+    """ main class here."""
+    # Create a connection to the database and the desired tables
+    connection = Connect("NODES", "LINKS")
+    # Create the adjacency Dictionary
+    lis = CreateRoute(connection.nodes, connection.links, connection.cnxn, [1005612, 1005609, 1005618, 1005615, 1005611, 1037506])
+    print lis.route_links
+    print lis.route
+    print lis.route_distance
+    print lis.start_and_end
+
+if __name__ == '__main__':
+    main()
