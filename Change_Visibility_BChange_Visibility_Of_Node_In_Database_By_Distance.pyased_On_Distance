@@ -73,10 +73,7 @@ class ChangeVisibilityBasedOnDistance:
         # Select the row that holds the information of our node
         cursor_1.execute("SELECT GEOMETRY.Long, GEOMETRY.Lat FROM "+self.nodes+" WHERE ID=?", (node_id,))
         row = cursor_1.fetchone()
-        primary_node_coord = []
-        # Set its coordinates as the  primary coordinates
-        for part in row:
-            primary_node_coord.append(float(part))
+        primary_node_coord = [row[1], row[0]]
         # Close the cursor
         cursor_1.close()
         # Insert a second cursor
@@ -93,10 +90,8 @@ class ChangeVisibilityBasedOnDistance:
                 # Set the coordinates of the node as the secondary coordinates
                 cursor_3 = self.cnxn.cursor()
                 cursor_3.execute("SELECT GEOMETRY.Long, GEOMETRY.Lat FROM "+self.nodes+" WHERE ID=?", (row[0],))
-                secondary_node_coord = []
                 rows = cursor_3.fetchone()
-                for part in rows:
-                    secondary_node_coord.append(float(part))
+                secondary_node_coord = [rows[1], rows[0]]
                 # If the distance between the two nodes is greater than the distance given by the user
                 if self.calculate_ds(primary_node_coord, secondary_node_coord) >= distance:
                     # Append the nodes list
@@ -171,7 +166,7 @@ def main():
     """ main class here."""
     # Create a connection to the database and the desired tables
     connection = Connect("NODES","LINKS" )
-    lis = ChangeVisibilityBasedOnDistance(connection.nodes, connection.links, connection.cnxn, 104377, 0)
+    lis = ChangeVisibilityBasedOnDistance(connection.nodes, connection.links, connection.cnxn, 104377, 50)
     print lis.distant_nodes
     print lis.nodes_not_to_delete
 
