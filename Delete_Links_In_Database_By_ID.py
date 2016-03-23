@@ -18,40 +18,14 @@ class DeleteLinksByID:
     """ Takes an SQL table and creates a copy of it and removes the non desired
     links base on the users preferences"""
 
-    def __init__(self, links, cnxn):
+    def __init__(self, links, cnxn, lst):
         self.links = links
         self.cnxn = cnxn
-        self.cond = True
-        # Create a list with the ids of the nodes that the used wants to be removed
-        self.list_to_delete = self.links_to_remove(self.cond)
+        self.lst = lst
         # Delete the links
-        self.delete_links_by_id(self.list_to_delete)
+        self.delete_links_by_id(self.lst)
         # Reset the FID column
         self.fid_reset()
-
-    def links_to_remove(self, condition):
-        """This metgod creates a list with all the Ids of the links that
-        the user wants to be removed
-        @Param condition is boolean variable set to True
-        @Return is a list that contains the Ids of the links the user wants
-        to be removed"""
-
-        # Create an empty list
-        temp_list = []
-        # As long as condition == True
-        while condition:
-            # Promt the user to give us the id of a link he wants to remove or to end the process
-            temp_id = raw_input("Please type the id of the link or type End to continue! :")
-            # If the users does not want the process to end
-            if temp_id != 'End':
-                # Get the integer of the users input
-                ids = int(temp_id)
-                # Append the list with tha id
-                temp_list.append(ids)
-            # If the user types 'End'
-            else:
-                condition = False
-        return temp_list
 
     def delete_links_by_id(self, list_0):
         """This method takes a list of ids and deletes the links
@@ -90,8 +64,23 @@ class DeleteLinksByID:
 def main():
     # Create a connection to the database and the desired tables
     connection = Connect("LINKS")
+    # Create an empty list
+    temp_list = []
+    # As long as condition == True
+    while condition:
+        # Promt the user to give us the id of a link he wants to remove or to end the process
+        temp_id = raw_input("Please type the id of the link or type End to continue! :")
+        # If the users does not want the process to end
+        if temp_id != 'End':
+            # Get the integer of the users input
+            ids = int(temp_id)
+            # Append the list with tha id
+            temp_list.append(ids)
+        # If the user types 'End'
+        else:
+            condition = False
     # Create a new table and then delete the links
-    DeleteLinksByID(connection.links, connection.cnxn)
+    DeleteLinksByID(connection.links, connection.cnxn, temp_list)
 
 if __name__ == '__main__':
     main()
