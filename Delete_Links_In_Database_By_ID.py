@@ -67,6 +67,7 @@ def main():
     # Create an empty list
     temp_list = []
     # As long as condition == True
+    condition = True
     while condition:
         # Promt the user to give us the id of a link he wants to remove or to end the process
         temp_id = raw_input("Please type the id of the link or type End to continue! :")
